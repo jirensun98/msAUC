@@ -1,0 +1,34 @@
+Package: msAUC
+Title: Area-Under-the-Curve Estimation of Cumulative Disease Burden
+Version: 0.1.0
+Authors@R: c(
+    person("Jiren", "Sun", email = "jirensun@outlook.com",
+           role = c("aut", "cre")),
+    person("Tuo", "Wang", role = "aut"),
+    person("Yu", "Du", role = "aut"))
+Description: Quantifies cumulative disease burden in clinical trials with a
+    progressive, ordinal multistate outcome and a terminal event. The estimand
+    is the area under the mean cumulative severity-score curve over a
+    restriction window, summarised as a ratio and a difference between two
+    treatment arms with a per-state decomposition. Users choose which ordinal
+    states enter the composite, enabling endpoint-definition sensitivity
+    analyses. Inference uses the martingale influence-function representation of
+    the restricted mean survival time. Methods follow Claggett and others
+    (2018) <doi:10.1002/sim.7907> and Sun and others (2025)
+    <doi:10.1002/sim.70187>.
+License: MIT + file LICENSE
+URL: https://github.com/jirensun98/msAUC
+BugReports: https://github.com/jirensun98/msAUC/issues
+Encoding: UTF-8
+Imports:
+    ggplot2,
+    stats,
+    survival
+Suggests:
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1

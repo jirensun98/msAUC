@@ -1,0 +1,222 @@
+---
+title: "Measuring cumulative disease burden with the AUC method"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{msAUC Tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.5,
+  dpi = 96
+)
+```
+
+```{r setup}
+library(msAUC)
+set.seed(2024)
+```
+
+## Why an area-under-the-curve estimand?
+
+In trials with a progressive, ordinal outcome -- for example successive
+thresholds of kidney-function decline, end-stage renal disease, and death -- a
+conventional *time-to-first-event* analysis collapses each participant to a
+single endpoint and ignores everything that happens afterwards. Two patients who
+both reach a first event at the same time are treated identically even if one
+stabilises while the other progresses to dialysis and dies.
+
+The **area-under-the-curve (AUC)** estimand instead tracks the *mean cumulative
+severity score* over the whole follow-up window. Each participant accrues score
+as they pass through increasingly severe states, and the area under that mean
+curve, restricted to `[0, tau]`, summarises the total burden experienced. The
+treatment effect is reported as a **ratio** and a **difference** of these areas.
+
+This vignette walks through a complete analysis on simulated data.
+
+## Data format
+
+`msAUC` expects data in long multistate format, the same layout used by the
+**rmt** package. Each subject contributes one or more rows; `status` is coded
+
+- `0` for censoring,
+- `1, ..., K` for the ordinal non-fatal states in increasing severity,
+- `K + 1` for death.
+
+A subject's records end with either a death row (`status == K + 1`) or a
+censoring row (`status == 0`).
+
+`sim_cumburden()` generates data in exactly this form. It uses a continuous-time
+progressive multistate model: each subject starts event-free and, from whatever
+state they currently occupy, faces two competing exponential clocks -- one to
+progress to the next more-severe state, one to die. Whichever fires first
+happens, and the process repeats until death, random dropout, or administrative
+censoring at `tau`.
+
+The treatment effect is induced through the `hr` argument, which multiplies the
+**transition intensities** (the instantaneous rates of progressing and of dying)
+in the active arm. It is therefore a hazard ratio defined per transition, not
+per composite endpoint: `hr < 1` slows every transition, so treated patients
+linger longer in milder states and accrue less cumulative burden. (If you need
+the treatment to act differently on progression and on mortality, set
+`hr_progression` and `hr_death` separately; if you want the progression and
+death rates to differ by disease state -- for example, faster decline and higher
+mortality as patients worsen -- pass vectors to `progression` and `mortality`;
+and the
+allocation ratio is set with `ratio` (1:1 by default) -- see `?sim_cumburden`.)
+
+Here we simulate a trial with four non-fatal states plus death, applying a
+common hazard ratio of 0.78 to every transition in the active arm:
+
+```{r simulate}
+dat <- sim_cumburden(n = 800, K = 4, tau = 6, hr = 0.78, seed = 1)
+head(dat, 8)
+
+# status 0 = censored, 1-4 = ordinal non-fatal states, 5 = death
+table(dat$status)
+```
+
+Each subject has a single treatment assignment that is constant across their
+rows:
+
+```{r arms}
+arm_by_id <- tapply(dat$arm, dat$id, function(x) x[1])
+table(arm = arm_by_id)
+```
+
+## Fitting the model
+
+`auc_fit()` estimates the AUC in each arm and contrasts them. The only required
+argument beyond the data is the restriction time `tau`:
+
+```{r fit}
+fit <- auc_fit(dat, tau = 6)
+fit
+```
+
+The printout reports:
+
+- the **AUC** in each arm (cumulative event-free time lost to progression),
+- the **AUC ratio** (active / control); below 1 means lower burden under
+  treatment,
+- the **AUC difference** (active − control), in score-years; below 0 means
+  lower burden under treatment.
+
+## Decomposing the effect
+
+`summary()` adds a per-state decomposition: how much event-free time the
+treatment adds at each severity level. These contributions sum exactly to the
+absolute AUC reduction.
+
+```{r summary}
+summary(fit)
+```
+
+The `estimate` column is the extra event-free time (in years) the treatment
+provides for "reaching state *s* or worse". Reading down the states shows
+whether the benefit is concentrated in milder progression or extends all the way
+to the most severe outcomes.
+
+You can pull any quantity out of the fitted object directly:
+
+```{r extract}
+fit$ratio
+fit$difference
+fit$decomposition
+```
+
+## Visualising the burden
+
+`auc_plot()` reproduces the central figure for this estimand: the expected
+cumulative score in each arm (primary axis) with the AUC ratio as a function of
+the restriction time overlaid (secondary, dashed). The gap between the two solid
+curves *is* the burden the treatment averts.
+
+```{r plot}
+auc_plot(fit)
+```
+
+If you would rather build the figure yourself, `auc_curve_data()` returns the
+underlying curves and ratio as plain data frames:
+
+```{r curve-data}
+cd <- auc_curve_data(fit)
+str(cd, max.level = 2)
+```
+
+## Choosing which endpoints to include
+
+A recurring question is how sensitive the conclusion is to the *definition* of
+the composite. The `states` argument lets you include any subset of the ordinal
+states; the retained states are automatically re-scored `1, ..., m` in
+increasing severity, with death always carrying the top score.
+
+```{r sensitivity}
+# All five states (default)
+all5 <- auc_fit(dat, tau = 6)
+
+# Drop the mildest state
+drop1 <- auc_fit(dat, tau = 6, states = c(2, 3, 4, 5))
+
+# The two most severe states only (e.g. ESRD + death)
+severe <- auc_fit(dat, tau = 6, states = c(4, 5))
+
+sens <- data.frame(
+  definition = c("all 5 states", "drop mildest", "ESRD + death"),
+  n_states   = c(all5$n_states, drop1$n_states, severe$n_states),
+  ratio      = c(all5$ratio["estimate"], drop1$ratio["estimate"], severe$ratio["estimate"]),
+  ci_low     = c(all5$ratio["conf.low"], drop1$ratio["conf.low"], severe$ratio["conf.low"]),
+  ci_high    = c(all5$ratio["conf.high"], drop1$ratio["conf.high"], severe$ratio["conf.high"])
+)
+sens
+```
+
+Comparing the AUC ratio across endpoint definitions is a transparent
+sensitivity analysis: a conclusion that holds whether or not the mildest states
+are included is more robust than one that depends on them.
+
+## Choosing the restriction time
+
+`tau` should reflect the clinically relevant follow-up horizon and must lie
+within the observed event times. Because the AUC accumulates over `[0, tau]`,
+larger `tau` generally yields a larger absolute difference; reporting the ratio
+alongside the difference helps separate the magnitude of burden from the
+relative effect.
+
+```{r tau-sweep}
+taus <- c(3, 4, 5, 6)
+do.call(rbind, lapply(taus, function(tt) {
+  f <- auc_fit(dat, tau = tt)
+  data.frame(tau = tt,
+             ratio = round(f$ratio["estimate"], 3),
+             difference = round(f$difference["estimate"], 3))
+}))
+```
+
+## Notes and limitations
+
+- **Scoring.** The included states are scored with equal one-unit steps (1 for
+  the mildest state you keep, up to `m` for death). This R package does not have
+  a function to customize severity weights.
+- **State skipping and interval censoring.** A subject first observed in a
+  severe state -- or who dies with no milder event recorded -- is treated as
+  reaching every lower threshold at that same time. Because disease states are
+  typically assessed only at scheduled visits, the recorded time to a milder
+  threshold is really the time it was *first detected* (at that level or
+  worse), which can be later than when it was actually crossed.
+- **Two arms.** `auc_fit()` compares exactly two arms and treats them as
+  independent when combining variances.
+
+## References
+
+- Claggett B, Tian L, Fu H, et al. Quantifying the totality of treatment effect
+  with multiple event-time observations in the presence of a terminal event.
+  *Statistics in Medicine* 2018; 37(25): 3589--3598.
+- Sun J, et al. Improve the precision of area under the curve
+  estimation for recurrent events through covariate adjustment. *Statistics in
+  Medicine* 2025; 44(15--17): e70187.
