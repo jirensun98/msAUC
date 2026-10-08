@@ -128,7 +128,9 @@ The two arms are compared by the ratio `AUC_1 / AUC_0` and the difference
 across the thresholds, so each severity level contributes a known share of the
 overall effect — the event-free time gained under treatment at that level.
 Standard errors come from the martingale influence-function representation of
-each RMST, with the two arms treated as independent.
+each RMST, in the form that remains valid with tied event times (for a single state it
+reproduces the Greenwood-type variance of the Kaplan-Meier restricted mean), with
+the two arms treated as independent.
 
 ## References
 

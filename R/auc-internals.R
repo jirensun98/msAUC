@@ -35,25 +35,6 @@
   }, numeric(1))
 }
 
-#' Baseline survival from a null Cox model at a set of times
-#'
-#' Returns the survival curve from `coxph(Surv(time, ind) ~ 1)` evaluated at
-#' `at`. This is the quantity used in the denominator of the influence
-#' function. It is computed via the survival package directly (equivalent to
-#' the value returned by `pec::predictSurvProb()` on a null Cox fit) so that
-#' tie handling matches a standard Cox baseline estimate.
-#'
-#' @param time numeric event/censoring times.
-#' @param ind  event indicator (1 = event, 0 = censored).
-#' @param at   numeric vector of times at which to evaluate the survival curve.
-#' @return numeric survival probabilities, one per element of `at`.
-#' @keywords internal
-#' @noRd
-.cox_baseline_surv <- function(time, ind, at) {
-  fit <- survival::coxph(survival::Surv(time, ind) ~ 1)
-  summary(survival::survfit(fit), times = at, extend = TRUE)$surv
-}
-
 #' Influence function for the restricted mean event-free time of one transition
 #'
 #' For a single (composite) time-to-event endpoint within a single arm, returns
@@ -61,11 +42,18 @@
 #' survival curve (restricted mean survival time, RMST) up to `tau`, together
 #' with the point estimate `U` = RMST(tau).
 #'
-#' The estimator follows the martingale representation used in Sun et al. (2025)
-#' for area-under-the-curve estimands: for subject i,
-#' \deqn{\xi_i = \sum_{u \le \min(X_i, \tau)} w(u)\,[dN_i(u) - dN(u)/Y(u)] / S(u),}
-#' where \eqn{w(u) = \int_u^\tau S(v)\,dv}, \eqn{S} is the survival function and
-#' \eqn{Y(u)} the at-risk set.
+#' For subject i,
+#' \deqn{\xi_i = \sum_{u \le \min(X_i, \tau)} \frac{n\,w(u)}{Y(u) - d(u)}
+#'   \{dN_i(u) - d(u)/Y(u)\},}
+#' where \eqn{w(u) = \int_u^\tau \hat S(v)\,dv}, \eqn{Y(u)} is the number at
+#' risk and \eqn{d(u)} the number of events at \eqn{u}. The weight
+#' \eqn{n/\{Y(u) - d(u)\} = 1/[\hat\pi(u)\{1 - \Delta\hat\Lambda(u)\}]}, with
+#' \eqn{\hat\pi(u) = Y(u)/n} the at-risk proportion, is the first-order form
+#' that remains valid with tied event times: with it, \eqn{\sum_i \xi_i^2/n^2} equals
+#' the Greenwood-type variance of the Kaplan-Meier restricted mean. Terms with
+#' \eqn{Y(u) = d(u)} have \eqn{w(u) = 0} and are set to zero. (Versions <= 0.1.0
+#' divided by the estimated survival function instead, which understates the
+#' standard error when subjects are censored before `tau`.)
 #'
 #' @param time numeric event/censoring times (one row per subject).
 #' @param ind  event indicator (1 = event, 0 = censored).
@@ -93,17 +81,16 @@
   d          <- vapply(ev, function(u) sum(time == u & ind == 1), numeric(1))
   event_rate <- d / Y
 
-  # Survival in the denominator: baseline survival from a null Cox model,
-  # matching pec::predictSurvProb() on coxph(~ 1).
-  surv_prob <- .cox_baseline_surv(time, ind, ev)
-
   # Weight w(u) = RMST(tau) - RMST(u) = integral_u^tau S(v) dv.
   w <- U - .km_rmst(time, ind, ev)
 
+  # n * w(u) / {Y(u) - d(u)}  =  w(u) / [pi_hat(u) * {1 - dLambda_hat(u)}].
+  # If Y(u) == d(u) the KM curve is zero from u onward, so w(u) == 0.
+  scale_term <- ifelse(Y > d, n * w / pmax(Y - d, 1), 0)
+
   # Per-subject influence, summing martingale increments over event times the
   # subject was at risk for (u <= time_i, u <= tau).
-  #   contrib_{i,u} = 1{time_i >= u} * w(u) * (1{time_i == u & event} - rate(u)) / S(u)
-  scale_term <- w / surv_prob                       # length = #event times
+  #   contrib_{i,u} = 1{time_i >= u} * scale(u) * (1{time_i == u & event} - rate(u))
   influence  <- numeric(n)
   for (j in seq_along(ev)) {
     at_risk    <- time >= ev[j]

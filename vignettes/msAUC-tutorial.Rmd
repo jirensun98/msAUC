@@ -101,7 +101,7 @@ fit
 
 The printout reports:
 
-- the **AUC** in each arm (cumulative event-free time lost to progression),
+- the **AUC** in each arm (cumulative time lost to progression),
 - the **AUC ratio** (active / control); below 1 means lower burden under
   treatment,
 - the **AUC difference** (active − control), in score-years; below 0 means

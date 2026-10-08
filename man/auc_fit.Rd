@@ -78,9 +78,11 @@ more severe state, is treated as having reached \eqn{s} at that time), then
 estimates its restricted mean survival time (RMST) by the area under the
 Kaplan-Meier curve. With \eqn{m} retained states the arm-specific AUC is
 \deqn{\mathrm{AUC}_a = m\tau - \sum_{k=1}^{m} \mathrm{RMST}_k^{(a)},}
-interpreted as the cumulative event-free time lost to disease progression.
+interpreted as the cumulative time lost to disease progression.
 Standard errors use the martingale influence-function representation of each
-RMST; the two arms are treated as independent.
+RMST, in the form that remains valid with tied event times (for a single state it
+reproduces the Greenwood-type variance of the Kaplan-Meier restricted mean);
+the two arms are treated as independent.
 
 Selecting fewer states reproduces the endpoint-definition sensitivity
 analysis in the source manuscript: dropping the mildest states lowers

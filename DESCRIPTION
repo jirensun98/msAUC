@@ -1,6 +1,6 @@
 Package: msAUC
 Title: Area-Under-the-Curve Estimation of Cumulative Disease Burden
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(
     person("Jiren", "Sun", email = "jirensun@outlook.com",
            role = c("aut", "cre")),

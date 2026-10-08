@@ -21,9 +21,11 @@
 #' estimates its restricted mean survival time (RMST) by the area under the
 #' Kaplan-Meier curve. With \eqn{m} retained states the arm-specific AUC is
 #' \deqn{\mathrm{AUC}_a = m\tau - \sum_{k=1}^{m} \mathrm{RMST}_k^{(a)},}
-#' interpreted as the cumulative event-free time lost to disease progression.
+#' interpreted as the cumulative time lost to disease progression.
 #' Standard errors use the martingale influence-function representation of each
-#' RMST; the two arms are treated as independent.
+#' RMST, in the form that remains valid with tied event times (for a single state it
+#' reproduces the Greenwood-type variance of the Kaplan-Meier restricted mean);
+#' the two arms are treated as independent.
 #'
 #' Selecting fewer states reproduces the endpoint-definition sensitivity
 #' analysis in the source manuscript: dropping the mildest states lowers
@@ -192,8 +194,10 @@ auc_fit <- function(data, id = "id", time = "time", status = "status",
 
   IF_tot_t <- rowSums(IF_trt)
   IF_tot_c <- rowSums(IF_ctrl)
-  varU_t <- stats::var(IF_tot_t) / n_trt
-  varU_c <- stats::var(IF_tot_c) / n_ctrl
+  # Influence values sum to zero within arm, so sum(IF^2)/n^2 is the variance
+  # estimator of the accompanying manuscript (Supplementary Section S1).
+  varU_t <- sum(IF_tot_t^2) / n_trt^2
+  varU_c <- sum(IF_tot_c^2) / n_ctrl^2
 
   z <- stats::qnorm(1 - (1 - conf.level) / 2)
 
@@ -214,8 +218,8 @@ auc_fit <- function(data, id = "id", time = "time", status = "status",
 
   # --- per-state decomposition (event-free time gained under treatment) ------
   comp_est <- U_trt - U_ctrl            # RMST_trt - RMST_ctrl per state
-  comp_se  <- sqrt(apply(IF_trt, 2, stats::var) / n_trt +
-                   apply(IF_ctrl, 2, stats::var) / n_ctrl)
+  comp_se  <- sqrt(colSums(IF_trt^2) / n_trt^2 +
+                   colSums(IF_ctrl^2) / n_ctrl^2)
   comp_z   <- comp_est / comp_se
   comp_p   <- 2 * stats::pnorm(abs(comp_z), lower.tail = FALSE)
 
